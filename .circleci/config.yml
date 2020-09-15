@@ -1,4 +1,9 @@
-version: 2
+version: 2.1
+
+orbs:
+  aws-cli: circleci/aws-cli@0.1.20
+  aws-ecr: circleci/aws-ecr@6.7.0
+  aws-ecs: circleci/aws-ecs@1.1.0
 jobs:
   build:
     working_directory: /app
@@ -7,7 +12,7 @@ jobs:
     steps:
       - checkout
       - setup_remote_docker:
-          docker_layer_caching: true
+          docker_layer_caching: false
       - run:
           name: Set version
           command: |
@@ -29,31 +34,49 @@ jobs:
             docker run --network container:db --rm -e DATABASE_URL mirumee/saleor:latest pytest
           environment:
             DATABASE_URL: postgres://saleor:saleor@localhost:5432/saleor
-      - deploy:
-          name: Push Docker image
-          command: |
-            docker login -u $DOCKERCLOUD_USER -p $DOCKERCLOUD_PASS
-            docker tag mirumee/saleor:latest mirumee/saleor:$CIRCLE_SHA1
-            docker push mirumee/saleor:$CIRCLE_SHA1
-            docker push mirumee/saleor:latest
-      - run:
-          name: Deploy saleor-demo
-          command: |
-            if [ -n "$CIRCLE_TAG" ]; then
-              apk add --upgrade --no-cache curl libcurl
-              sh ./scripts/push_static.sh
-              curl -u $DEMO_DEPLOY_KEY: \
-                -d build_parameters[CIRCLE_JOB]=deploy \
-                https://circleci.com/api/v1.1/project/github/mirumee/saleor-demo/tree/master
-            fi
+  ecr-build-push:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-ecr/build-and-push-image:
+          account-url: AWS_ECR_ACCOUNT_URL
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+          repo: '${APP_NAME}'
+          tag: '${CIRCLE_SHA1},latest'
+  ecs-deploy:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/install
+      - aws-cli/setup:
+          aws-region: AWS_REGION
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+      - aws-ecs/update-service:
+          family: '${APP_NAME}-bc'
+          cluster-name: bc-cluster-sand
+          container-image-name-updates: 'container=${APP_NAME}-bc,image-and-tag=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}:latest'
+          verify-revision-is-deployed: true
 
 workflows:
-  version: 2
   build-deploy:
     jobs:
       - build:
+      - ecr-build-push:
+#          context: deploy-env
           filters:
             branches:
               only: master
-            tags:
-              only: /demo.*/
+          requires:
+            - build
+#      - ecs-deploy:
+#          context: deploy-env
+#          filters:
+#            branches:
+#              only: master
+#          requires:
+#            - ecr-build-push
