@@ -65,7 +65,7 @@ jobs:
 workflows:
   build-deploy:
     jobs:
-      - build:
+      - build
       - ecr-build-push:
 #          context: deploy-env
           filters:
