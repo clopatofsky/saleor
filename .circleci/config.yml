@@ -51,15 +51,15 @@ jobs:
       - image: circleci/python:3.7.1
     steps:
       - setup_remote_docker:
-          docker_layer_caching: true
+          docker_layer_caching: false
       - aws-cli/install
       - aws-cli/setup:
           aws-region: AWS_REGION
           aws-access-key-id: AWS_ACCESS_KEY_ID
       - aws-ecs/update-service:
-          family: '${APP_NAME}-bc'
+          family: '${APP_NAME}'
           cluster-name: bc-cluster-sand
-          container-image-name-updates: 'container=${APP_NAME}-bc,image-and-tag=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}:latest'
+          container-image-name-updates: 'container=${APP_NAME},image-and-tag=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}:latest'
           verify-revision-is-deployed: true
 
 workflows:
